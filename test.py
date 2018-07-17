@@ -1,18 +1,8 @@
-import pygame
 import time
+import random
 from qlearn import Q
 import random
 import pickle
-
-
-pygame.init()
-
-height = 600
-width = 800
-
-gameDisplay = pygame.display.set_mode((800, 600))
-pygame.display.set_caption('q learning')
-clock = pygame.time.Clock()
 
 
 game_grid = [[0,1,2,3,4,5,6,7,8],
@@ -46,7 +36,7 @@ rewards = [
            [0, 0, 100, None],
            [-200, 0, 0, None],
            [100, -200, 0, None],
-           [0 , 0, -200, None],
+           [0 , 0, 100, None],
            [0, 100, 0, None],
            [0, 0, 100, None],
            [0, 0, 0, None],
@@ -127,19 +117,11 @@ class state:
         print(str(self.start_x) + " " + str(self.start_y) + " " + str(self.value) + "\n")
 
 
-class agent:
-    def __init__(self):
-        self.x = None
-        self.y = None
-
-    def moveTo(self, st):
-        self.x = 50 + (st%9) * 70 + 35
-        self.y = 200 + 80 + int(st/9)*100
-        pygame.draw.circle(gameDisplay, (230, 0, 0), [self.x, self.y], 5)
-
-    def erase(self):
-        pygame.draw.circle(gameDisplay, (0, 0, 0), [self.x, self.y], 5)
-
+def converge(v1,v2):
+    if(abs(v1-v2) < 1e-7):
+        return True
+    else:
+        return False
 
 def do_action(index,cur):
     if(index == 0):
@@ -152,87 +134,45 @@ def do_action(index,cur):
         return cur + 9
 
 
-def text_objects(text, font,color):
-    textSurface = font.render(text, True, color)
-    return textSurface, textSurface.get_rect()
-
-
-def message_display(text, x, y,size,color):
-    largeText = pygame.font.Font('freesansbold.ttf', size)
-    TextSurf, TextRect = text_objects(text, largeText,color)
-    TextRect.center = (x, y)
-    gameDisplay.blit(TextSurf, TextRect)
-
-
-def draw(State_list):
-    for x in State_list:
-        vl = x.value
-        pygame.draw.rect(gameDisplay, (255, 255, 255),
-                         [x.start_x, x.start_y, x.width, x.height], 5)
-        message_display(str(vl), x.start_x + x.width / 2, x.start_y + x.height / 2,20,(0,255,0))
-
-
-
-def initialize():
-    # pygame.draw.rect(gameDisplay,(255,255,255),[100,250,500,100])
-    State_list = []
-    for row in game_grid:
-        for val in row:
-            State_list.append(state(50 + row.index(val) * 70, 200 + game_grid.index(row) * 100, val))
-    draw(State_list)
-    for x in pits:
-        for st in State_list:
-            if(st.value == x):
-                message_display('PIT',st.start_x + 35,st.start_y + 70,10,(255, 182, 0))
-    for x in goals:
-        for st in State_list:
-            if(st.value == x):
-                message_display('GOAL',st.start_x + 35,st.start_y + 70,10,(255, 182, 0))
-    pygame.display.update()
-
-initialize()
-
-gameExit = False
-
-Ag = agent()
-
-rate = 0.9
-discount = 0.3
-
-
-for ep in range(0,5000):
-    cur = random.choice(random.choice(game_grid))
-    end = False
-    index = -1
-    action = False
-    print(ep + 1)
-    print("\n \n")
-    while not end:
+def loop(rate,discount,eps):
+    for ep in range(0,eps):
+        cur = random.choice(random.choice(game_grid))
+        end = False
+        index = -1
         action = False
-        Ag.moveTo(cur)
-        pygame.display.update()
-        next_action = transition[cur]
-        while action == False:
-            index = random.randint(0,3)
-            action = next_action[index]
-        next_action = do_action(index,cur)
-        q_values[cur][index] = q_values[cur][index] + rate*(rewards[cur][index] + discount*max(q_values[next_action])) - q_values[cur][index]
-        cur = next_action
-        if (cur in pits or cur in goals):
-            end = True
-            Ag.erase()
-            break
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                quit()
-        print(q_values)
-        print("\n")
-        Ag.erase()
-        #clock.tick(1000)
+        #print(ep + 1)
+        #print("\n \n")
+        while not end:
+            action = False
+            next_action = transition[cur]
+            while action == False:
+                index = random.randint(0, 3)
+                action = next_action[index]
+            next_action = do_action(index, cur)
+            q_values[cur][index] = q_values[cur][index] + rate * (
+                    rewards[cur][index] + discount * max(q_values[next_action])) - q_values[cur][index]
+            cur = next_action
+            if (cur in pits or cur in goals):
+                end = True
+                break
 
-pygame.quit()
+            if(ep >= 10):
+                with open('/home/Cryptik/Desktop/q_values.pkl', 'rb') as input:
+                    old_values = pickle.load(input)
+                    fl = 0
+                    for r1, r2 in zip(q_values, old_values.Q_values):
+                        for c1, c2 in zip(r1, r2):
+                            if (c1 == 0 and c2 == 0):
+                                continue
+                            if not converge(c1,c2):
+                                print(c1,c2)
+                                fl = 1
+                    if(fl == 0):
+                        print("complete at",ep + 1)
+                        break
+                    fl = 0
 
-with open('/home/Cryptik/Desktop/q_values.pkl', 'wb') as output:
-    lst = Q(q_values)
-    pickle.dump(lst, output, pickle.HIGHEST_PROTOCOL)
+
+            with open('/home/Cryptik/Desktop/q_values.pkl', 'wb') as output:
+                lst = Q(q_values)
+                pickle.dump(lst, output, pickle.HIGHEST_PROTOCOL)

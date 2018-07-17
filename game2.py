@@ -1,8 +1,86 @@
 import pygame
 import time
+from qlearn import Q
 import random
+import pickle
+
 
 pygame.init()
+
+height = 600
+width = 800
+
+gameDisplay = pygame.display.set_mode((800, 600))
+pygame.display.set_caption('q learning')
+clock = pygame.time.Clock()
+
+
+game_grid = [[0,1,2,3,4,5,6,7,8],
+             [9,10,11,12,13,14,15,16,17],
+             [18,19,20,21,22,23,24,25,26]]
+
+pits = [0,4,17,19,23]
+
+goals = [6,14,20,25]
+
+
+q_values = [[-1, -1, -1, -1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [-1, -1, -1, -1],
+            [0, 0, 0, 0],
+            [-1, -1, -1, -1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [-1, -1, -1, -1],
+            [0, 0, 0, 0],
+            [-1, -1, -1, -1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [-1, -1, -1, -1],
+            [0, 0, 0, 0],
+            [-1, -1, -1, -1],
+            [-1, -1, -1, -1],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [0, 0, 0, 0],
+            [-1, -1, -1, -1],
+            [0, 0, 0, 0],
+                         ]
+
+transition = [[False, False, True, True],
+              [True, False, True, True],
+              [True, False, True, True],
+              [True, False, True, True],
+              [True, False, True, True],
+              [True, False, True, True],
+              [True, False, True, True],
+              [True, False, True, True],
+              [True, False, False, True],
+              [False, True, True, True],
+              [True, True, True, True],
+              [True, True, True, True],
+              [True, True, True, True],
+              [True, True, True, True],
+              [True, True, True, True],
+              [True, True, True, True],
+              [True, True, True, True],
+              [True, True, False, True],
+              [False, True, True, False],
+              [True, True, True, False],
+              [True, True, True, False],
+              [True, True, True, False],
+              [True, True, True, False],
+              [True, True, True, False],
+              [True, True, True, False],
+              [True, True, True, False],
+              [True, True, False, False],
+                                        ]
 
 
 class state:
@@ -26,20 +104,23 @@ class agent:
         self.y = None
 
     def moveTo(self, st):
-        self.x = 50 + st * 70 + 35
-        self.y = 250 + 80
+        self.x = 50 + (st%9) * 70 + 35
+        self.y = 200 + 80 + int(st/9)*100
         pygame.draw.circle(gameDisplay, (230, 0, 0), [self.x, self.y], 5)
 
-    def erase(self,st):
-        self.x = 50 + st * 70 + 35
-        self.y = 250 + 80
+    def erase(self):
         pygame.draw.circle(gameDisplay, (0, 0, 0), [self.x, self.y], 5)
 
 
-
-gameDisplay = pygame.display.set_mode((800, 600))
-pygame.display.set_caption('q learning')
-clock = pygame.time.Clock()
+def do_action(index,cur):
+    if(index == 0):
+        return cur - 1
+    elif(index == 1):
+        return cur - 9
+    elif(index == 2):
+        return cur + 1
+    else:
+        return cur + 9
 
 
 def text_objects(text, font,color):
@@ -57,21 +138,28 @@ def message_display(text, x, y,size,color):
 def draw(State_list):
     for x in State_list:
         vl = x.value
-        pygame.draw.rect(gameDisplay, (255 - vl * 20, 255 - vl * 20, 255 - vl * 20),
+        pygame.draw.rect(gameDisplay, (255, 255, 255),
                          [x.start_x, x.start_y, x.width, x.height], 5)
         message_display(str(vl), x.start_x + x.width / 2, x.start_y + x.height / 2,20,(0,255,0))
+
 
 
 def initialize():
     # pygame.draw.rect(gameDisplay,(255,255,255),[100,250,500,100])
     State_list = []
-    for x in range(0, 10):
-        State_list.append(state(50 + x * 70, 250, x))
+    for row in game_grid:
+        for val in row:
+            State_list.append(state(50 + row.index(val) * 70, 200 + game_grid.index(row) * 100, val))
     draw(State_list)
-    message_display('PIT',50 + 35,270,10,(255, 182, 0))
-    message_display('GOAL',50 + 6 * 70 + 35,270,10,(255, 182, 0))
+    for x in pits:
+        for st in State_list:
+            if(st.value == x):
+                message_display('PIT',st.start_x + 35,st.start_y + 70,10,(255, 182, 0))
+    for x in goals:
+        for st in State_list:
+            if(st.value == x):
+                message_display('GOAL',st.start_x + 35,st.start_y + 70,10,(255, 182, 0))
     pygame.display.update()
-
 
 initialize()
 
@@ -79,15 +167,74 @@ gameExit = False
 
 Ag = agent()
 
-while not gameExit:
+rate = 0.1
+discount = 0.3
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            pygame.quit()
-            quit()
+def get_Index(old,nw):
+    if(nw == -1):
+        return 0
+    else:
+        if(nw - 1 == old):
+            return 2
+        elif(nw - 9 == old):
+            return 3
+        elif(nw + 1 == old):
+            return 0
+        else:
+            return 1
 
-    cur = random.randint(0,9)
-    Ag.moveTo(cur)
-    pygame.display.update()
-    Ag.erase(cur)
-    clock.tick(1)
+def assign_values(history):
+    history.reverse()
+    disc = discount
+    if history[0] in pits:
+        disc = -disc
+    for ind in range(1,len(history)):
+        if(ind == 1):
+            temp = (disc/((ind)))*100
+        else:
+            temp = (disc/((ind)/rate))*q_values[history[ind-1]][get_Index(history[ind-1],history[ind-2])]
+        q_values[history[ind]][get_Index(history[ind], history[ind - 1])] = max(temp,q_values[history[ind]][get_Index(history[ind],history[ind-1])])
+
+
+
+
+for ep in range(0,10000):
+    cur = random.choice(random.choice(game_grid))
+    end = False
+    index = -1
+    action = False
+    print(ep + 1)
+    print("\n \n")
+    backtrack = []
+    while not end:
+        action = False
+        Ag.moveTo(cur)
+        pygame.display.update()
+        next_action = transition[cur]
+        while action == False:
+            index = random.randint(0,3)
+            action = next_action[index]
+        next_action = do_action(index,cur)
+        backtrack.append(next_action)
+        cur = next_action
+        if (cur in pits or cur in goals):
+            if not len(backtrack) == 0:
+                assign_values(backtrack)
+            backtrack = backtrack[:]
+            end = True
+            Ag.erase()
+            break
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                quit()
+        print(q_values)
+        print("\n")
+        Ag.erase()
+        #clock.tick(1000)
+
+pygame.quit()
+
+with open('/home/Cryptik/Desktop/q_values2.pkl', 'wb') as output:
+    lst = Q(q_values)
+    pickle.dump(lst, output, pickle.HIGHEST_PROTOCOL)
